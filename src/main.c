@@ -11,10 +11,6 @@ extern int compute_sha256_by_bearssl(const void* data, size_t data_len, uint8_t 
 extern int verify_signature_by_bearssl(const void* data, size_t data_len,
                                 const void* signature, const void* pubkey);
 
-#if __has_builtin(__builtin_memmove)
-#warning "__builtin_memmove exists"
-#endif
-
 static const uint8_t test_pubkey[] = {
     0x04, 0x2e, 0x2a, 0xd1, 0x1c, 0xb4, 0x6b, 0xb9,
     0x1b, 0x94, 0xf3, 0x52, 0xe3, 0x4c, 0xcd, 0xde,
@@ -73,43 +69,36 @@ int test_verify_known_sig(void)
     return err;
 }
 
+static void uart_put_uint(const char* s, uint32_t value, bool negative)
+{
+    char buf[32]; /* int32_t max is 11 digits + sign + null terminator */
+    char *p = buf + sizeof(buf) - 1;
+    *p = '\0';
+
+    do {
+        *--p = '0' + (value % 10);
+        value /= 10;
+    } while (value != 0);
+
+    if (negative) {
+        *--p = '-';
+    }
+
+    uart_puts(s);
+    uart_puts(p);
+    uart_putc('\n');
+}
+
 void uart_put_digit(const char* s, uint32_t value)
 {
-    char buf[32];
-    char* p = &buf[sizeof(buf) - 1];
-    char* end = &buf[-1];
-    *p-- = '\0';
-    do {
-        *p-- = '0' + (value % 10);
-        value /= 10;
-    } while (p != end && value != 0);
-    uart_puts(s);
-    uart_puts(p + 1);
-    uart_putc('\n');
+    uart_put_uint(s, value, false);
 }
 
 void uart_put_int(const char* s, int value)
 {
-    char buf[32];
-    char* p = &buf[sizeof(buf) - 1];
-    char* end = &buf[-1];
-    bool negative = false;
-
-    if (value < 0) {
-        negative = true;
-        value = -value;
-    }
-    *p-- = '\0';
-    do {
-        *p-- = '0' + (value % 10);
-        value /= 10;
-    } while (p != end && value != 0);
-    if (negative) {
-        *p-- = '-';
-    }
-    uart_puts(s);
-    uart_puts(p + 1);
-    uart_putc('\n');
+    bool negative = value < 0;
+    unsigned u = negative ? -(unsigned)value : (unsigned)value;
+    uart_put_uint(s, u, negative);
 }
 
 void bench(void)

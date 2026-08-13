@@ -4,7 +4,8 @@ project('mebuki', 'c',
   default_options : ['c_std=c23', 'buildtype=minsize']
 )
 
-objcopy = find_program('rx-elf-objcopy')
+objcopy = find_program('objcopy')
+objdump = find_program('objdump')
 rfp_cli = find_program('rfp-cli')
 
 bearssl_dep = dependency(
@@ -43,10 +44,19 @@ app_exe = executable(
 )
 
 app_hex = custom_target(
-  app_exe.name(),
+  'app_hex',
   input: app_exe,
   output: app_exe.name() + '.s32',
   command: [objcopy, '-O', 'srec', '@INPUT@', '@OUTPUT@'],
+  build_by_default: true,
+)
+
+app_txt = custom_target(
+  'app_txt',
+  input: app_exe,
+  output: app_exe.name() + '.txt',
+  command: [objdump, '-d', '-S', '-l', '@INPUT@'],
+  capture : true,
   build_by_default: true,
 )
 
