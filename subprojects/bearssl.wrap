@@ -1,0 +1,6 @@
+[wrap-git]
+directory = bearssl
+url = https://www.bearssl.org/git/BearSSL
+revision = HEAD
+depth = 1
+patch_directory = bearssl
