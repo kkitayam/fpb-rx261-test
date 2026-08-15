@@ -65,6 +65,20 @@ union SCKCR {
 
 static const uint32_t g_ofs1 __attribute__((section(".ofs1"),used)) = 0xFFFFCEFFu; /* HOCO run at 64MHz */
 
+static inline void rx_smovb(void *dst, const void *src, size_t len)
+{
+    register void *r1 __asm("r1") = dst;
+    register const void *r2 __asm("r2") = src;
+    register size_t r3 __asm("r3") = len;
+
+    __asm volatile (
+        "smovb"
+        : "+r"(r1), "+r"(r2), "+r"(r3)
+        :
+        : "memory"
+    );
+}
+
 void _init(void) {
     /* A dummy function for C runtime initialization */
 }
@@ -153,11 +167,12 @@ int memcmp(const void* s1, const void* s2, size_t n)
 
 void *memmove(void *dest, const void *src, size_t n)
 {
-    uint8_t tmp[n];
-    uint8_t *d = (uint8_t *)dest;
-    const uint8_t *s = (const uint8_t *)src;
-    memcpy(tmp, s, n);
-    s = tmp;
-    memcpy(d, s, n);
+    if (dest < src) { /* forward */
+        memcpy(dest, src, n);
+    } else {          /* backward */
+        uint8_t *d = (uint8_t *)dest + n - 1;
+        const uint8_t *s = (const uint8_t *)src + n - 1;
+        rx_smovb(d, s, n);
+    }
     return dest;
 }

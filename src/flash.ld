@@ -35,14 +35,22 @@ SECTIONS
 		. = ALIGN(4);
 	} > PROM = 0xFF
 
-	.text ALIGN(4) :
+	. = ORIGIN(RAM);
+	.text.ram ALIGN(4) :
 	{
 		__text = .;
-		*(.text) *(.text.*)
+		*(.text.hal_flash_pe_ram)
 		. = ALIGN(4);
 		__etext = .;
+	} > RAM AT > PROM = 0xFF
+	__text_load = LOADADDR(.text.ram);
+
+	. = BOOT_ORIGIN + SIZEOF(.reset) + SIZEOF(.text.ram);
+	.text ALIGN(4) :
+	{
+		*(.text) *(.text.*)
+		. = ALIGN(4);
 	} > PROM = 0xFF
-	__text_load = LOADADDR(.text);
 
 	.rodata ALIGN(4) :
 	{
@@ -51,7 +59,7 @@ SECTIONS
 		__erodata = .;
 	} > PROM = 0xFF
 
-	. = ORIGIN(RAM);
+	. = ORIGIN(RAM) + SIZEOF(.text.ram);
 	.data ALIGN(4) :
 	{
 		__data = .;

@@ -966,18 +966,17 @@ static fsp_err_t HW_SCE_LoadHukSub (const uint32_t InData_LC[])
 int rsip_hw_init(void)
 {
     fsp_err_t iret;
-    volatile uint32_t delay;
 
     RSIP_MSTP_CLEAR();
 
     /* Give RSIP time after module-stop release (dirty state after failed HUK etc.) */
-    for (delay = 0u; delay < 10000u; delay++) { }
+    for (uint32_t i = 0u; i < 10000u; i++) __asm volatile ("" ::: "memory");
 
     /* Two software resets help clear stuck state from a previous failed session */
     HW_SCE_SoftwareResetSub();
-    for (delay = 0u; delay < 1000u; delay++) { }
+    for (uint32_t i = 0u; i < 1000u; i++) __asm volatile ("" ::: "memory");
     HW_SCE_SoftwareResetSub();
-    for (delay = 0u; delay < 1000u; delay++) { }
+    for (uint32_t i = 0u; i < 1000u; i++) __asm volatile ("" ::: "memory");
 
     iret = HW_SCE_SelfCheck1Sub();
     if (iret != FSP_SUCCESS) {

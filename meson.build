@@ -19,16 +19,20 @@ app_sources = files(
   'src/system.c',
   'src/startup.c',
   'src/br_sha256.c',
+  'src/test_rsip.c',
+  'src/test_flash.c',
 )
 app_includes = include_directories('src')
 
 vendor_sources = files(
   'vendor/rsip_ecdsa_p256_sha256.c',
+  'vendor/hal_flash.c',
 )
 vendor_includes = include_directories('vendor')
 
-machine_linker_file = files('src/flash.ld')
-machine_linker = meson.current_source_dir() / 'src/flash.ld'
+linker_file_name = 'flash.ld'
+machine_linker_file = files('src/' + linker_file_name)
+machine_linker = meson.current_source_dir() / 'src/' + linker_file_name
 
 app_exe = executable(
   'app',
