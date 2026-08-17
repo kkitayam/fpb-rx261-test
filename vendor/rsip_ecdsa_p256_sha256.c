@@ -1,22 +1,18 @@
-/*******************************************************************************
- * rsip_ecdsa_p256_sha256.c
- *
- * Minimal RSIP-E11A (RX261) SHA-256 + ECDSA secp256r1 verify for bootloader.
- * Compatibility Mode, polling only, no interrupts.
- *
- * Derived from Renesas RX Driver Package (r_rsip_cm_rx), BSD-3-Clause:
- *   https://github.com/renesas/rx-driver-package
- *   SHA:  hw_sce_p_p72.c, p00, p81, p82, p40, func100-103
- *   ECDSA: hw_sce_p_pf1.c, func070/071/073, DomainParams.c (__LIT)
+/*
+ * Copyright (c) 2025 Renesas Electronics Corporation and/or its affiliates
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *
- * USAGE
- * -----
- *   rsip_hw_init();
- *   rsip_sha256_compute(msg, len, hash);
- *   rsip_ecdsa_p256_verify_hash(hash, sig64, pubkey65);
- ******************************************************************************/
+ * This file is a derived work from Renesas r_rsip_cm_rx (rx-driver-package).
+ * Original copyright is retained under the BSD-3-Clause license terms.
+ *
+ * Source map (primitive/rx261 unless noted):
+ *   SHA: p72, p00, p81, p82, p40, func100-103
+ *   ECDSA: pf1, func070/071/073, DomainParams.c (__LIT)
+ *
+ * rsip_ecdsa_p256_sha256.c
+ * Bootloader driver: polling only, no PSA/mbedTLS link.
+ */
 
 #include <stdint.h>
 #include <stddef.h>
@@ -30,24 +26,15 @@ typedef int fsp_err_t;
 #define FSP_ERR_CRYPTO_SCE_RESOURCE_CONFLICT (-2)
 #define FSP_ERR_CRYPTO_SCE_RETRY             (-3)
 
-/* Staged errors from rsip_hw_init (distinct so caller can see which step failed) */
+/* Distinct codes so the caller can see which init step failed without a debugger. */
 #define RSIP_ERR_SELFCHECK1                 (-10)
 #define RSIP_ERR_SELFCHECK2                 (-11)
 #define RSIP_ERR_HUK                        (-12)
-/* SelfCheck1 detail (returned instead of generic -10 when possible) */
-#define RSIP_ERR_SC1_VERSION                (-101) /* REG_0090H != 0x0009F7C3 */
-#define RSIP_ERR_SC1_BUSY                   (-102) /* resource conflict */
-#define RSIP_ERR_SC1_CRYPTO                 (-103) /* self-test crypto fail */
+#define RSIP_ERR_SC1_VERSION                (-101)
+#define RSIP_ERR_SC1_BUSY                   (-102)
+#define RSIP_ERR_SC1_CRYPTO                 (-103)
 
-/*
- * Set to 1 to skip HUK load (useful if LoadHuk fails but you want to test SHA).
- * Official McuSpecificInit always loads HUK; SHA hang without HUK was reported before.
- */
-#ifndef RSIP_SKIP_HUK
-#define RSIP_SKIP_HUK  0
-#endif
-
-/* Module-stop release (PRCR unlock). Requires iodefine SYSTEM / MSTP(RSIP). */
+/* Needs board iodefine symbols SYSTEM and MSTP(RSIP). Override if the BSP names differ. */
 #ifndef RSIP_MSTP_CLEAR
 #define RSIP_MSTP_CLEAR() do { \
     SYSTEM.PRCR.WORD = 0xA502; MSTP(RSIP) = 0; SYSTEM.PRCR.WORD = 0xA500; } while (0)
@@ -61,10 +48,7 @@ typedef int fsp_err_t;
 
 #define R_RSIP_LITTLE_ENDIAN_MODE  (0x00010001u)
 
-/*==============================================================================
- * Minimal RSIP (SCE) register access — RX261 base 0x0008BA00
- * Register names match r_rsip_rx261_iodefine.h offsets.
- *============================================================================*/
+/* Offsets match r_rsip_rx261_iodefine.h. Base is the CM RSIP window on RX261. */
 #define SCE_BASE  (0x0008BA00u)
 
 #define REG_0000H  0x000u
@@ -155,10 +139,7 @@ typedef int fsp_err_t;
     for (_i = 0; _i < 8u; _i++) { _p[_i] = SCE_REG(regName); } \
 } while (0)
 
-/*==============================================================================
- * Helpers from FIT (endian, soft-reset, control procedures)
- *============================================================================*/
-/* RX has REVL; GCC maps bswap32 to a single instruction when possible. */
+/* Prefer the RX reverse-long instruction when the compiler can emit it. */
 #if defined(__GNUC__)
 #define change_endian_long(a)  __builtin_bswap32(a)
 #else
@@ -239,14 +220,14 @@ static void HW_SCE_SoftwareResetSub(void)
     WR1_PROG(REG_0024H, 0x00000000U);
 }
 
-/*----- SelfCheck1 (hw_sce_p_p81.c) -----*/
+/* From hw_sce_p_p81.c. Keep magic constants as in FIT. */
 static fsp_err_t HW_SCE_SelfCheck1Sub(void)
 {
     WR1_PROG(REG_008CH, 0x00000001U);
     WAIT_STS(REG_008CH, 1, 0);
 
     if (RD1_MASK(REG_0090H, 0xFFFFFFFFU) != 0x0009F7C3U) {
-        return (fsp_err_t)RSIP_ERR_SC1_VERSION; /* -101 */
+        return (fsp_err_t)RSIP_ERR_SC1_VERSION;
     }
 
     WR1_PROG(REG_000CH, 0x38c60eedU);
@@ -261,7 +242,7 @@ static fsp_err_t HW_SCE_SelfCheck1Sub(void)
     WR1_PROG(REG_0024H, 0x00000000U);
 
     if (RD1_MASK(REG_006CH, 0x00000017U) != 0) {
-        return (fsp_err_t)RSIP_ERR_SC1_BUSY; /* -102 */
+        return (fsp_err_t)RSIP_ERR_SC1_BUSY;
     }
 
     WR1_PROG(REG_00C0H, 0x00000001U);
@@ -293,7 +274,7 @@ static fsp_err_t HW_SCE_SelfCheck1Sub(void)
 
     if (CHCK_STS(REG_0020H, 13, 0)) {
         WR1_PROG(REG_006CH, 0x00000020U);
-        return (fsp_err_t)RSIP_ERR_SC1_CRYPTO; /* -103 */
+        return (fsp_err_t)RSIP_ERR_SC1_CRYPTO;
     }
 
     WR1_PROG(REG_0038H, 0x000000F1U);
@@ -307,7 +288,7 @@ static fsp_err_t HW_SCE_SelfCheck1Sub(void)
     return FSP_SUCCESS;
 }
 
-/*----- SelfCheck2 (hw_sce_p_p82.c) — official source body -----*/
+/* From hw_sce_p_p82.c */
 static fsp_err_t HW_SCE_SelfCheck2Sub (void)
 {
     uint32_t iLoop = 0U;
@@ -715,12 +696,12 @@ static fsp_err_t HW_SCE_SelfCheck2Sub (void)
         return FSP_SUCCESS;
     }
 
-    /* Should not reach here; silence -Wreturn-type */
+    /* FIT body has no default return; keep a fail path for -Wreturn-type. */
     return FSP_ERR_CRYPTO_SCE_FAIL;
 }
 
 
-/*----- SHA primitive (hw_sce_p_p72.c) — RSIP-E11A -----*/
+/* From hw_sce_p_p72.c */
 static fsp_err_t HW_SCE_ShaGenerateMessageDigestSub(const uint32_t InData_InitVal[],
                                                     const uint32_t InData_PaddedMsg[],
                                                     uint32_t OutData_MsgDigest[],
@@ -770,10 +751,7 @@ static fsp_err_t HW_SCE_ShaGenerateMessageDigestSub(const uint32_t InData_InitVa
     return FSP_SUCCESS;
 }
 
-/*==============================================================================
- * HUK load (hw_sce_p_p40.c + func048) — required by official McuSpecificInit
- * LC value RSIP_DUMMY_LC = 0x00000002 from FIT private header
- *============================================================================*/
+/* From hw_sce_p_p40.c / func048 */
 #define RSIP_DUMMY_LC  (0x00000002u)
 
 static void HW_SCE_p_func048(const uint32_t ARG1[])
@@ -960,159 +938,145 @@ static fsp_err_t HW_SCE_LoadHukSub (const uint32_t InData_LC[])
     }
 }
 
-/*==============================================================================
- * Hardware init (main から 1 回)
- *============================================================================*/
+/* Order follows FIT McuSpecificInit: MSTP, reset, SelfCheck, LE, HUK.
+ * Extra delays, a second SoftwareReset, and SelfCheck2 retries were only
+ * workarounds during early hung-HUK debugging. They are not part of the stock
+ * init path and are omitted here.
+ */
 int rsip_hw_init(void)
 {
     fsp_err_t iret;
 
     RSIP_MSTP_CLEAR();
 
-    /* Give RSIP time after module-stop release (dirty state after failed HUK etc.) */
-    for (uint32_t i = 0u; i < 10000u; i++) __asm volatile ("" ::: "memory");
-
-    /* Two software resets help clear stuck state from a previous failed session */
     HW_SCE_SoftwareResetSub();
-    for (uint32_t i = 0u; i < 1000u; i++) __asm volatile ("" ::: "memory");
-    HW_SCE_SoftwareResetSub();
-    for (uint32_t i = 0u; i < 1000u; i++) __asm volatile ("" ::: "memory");
 
     iret = HW_SCE_SelfCheck1Sub();
     if (iret != FSP_SUCCESS) {
-        /* -101 version, -102 busy, -103 crypto — or generic -10 */
         return (int)iret;
     }
 
-    /* Little-endian mode (official McuSpecificInit) */
+    /* LE mode is part of FIT McuSpecificInit; CM tables in this file assume LE. */
     WR1_PROG(REG_0018H, R_RSIP_LITTLE_ENDIAN_MODE);
     WR1_PROG(REG_001CH, R_RSIP_LITTLE_ENDIAN_MODE);
 
-    /* Official driver may see RETRY; try a few times */
-    {
-        int attempt;
-        iret = FSP_ERR_CRYPTO_SCE_FAIL;
-        for (attempt = 0; attempt < 3; attempt++) {
-            iret = HW_SCE_SelfCheck2Sub();
-            if (iret != FSP_ERR_CRYPTO_SCE_RETRY) {
-                break;
-            }
-        }
-        if (iret != FSP_SUCCESS) {
-            return RSIP_ERR_SELFCHECK2; /* -11 */
-        }
+    iret = HW_SCE_SelfCheck2Sub();
+    if (iret != FSP_SUCCESS) {
+        return RSIP_ERR_SELFCHECK2;
     }
 
-#if !RSIP_SKIP_HUK
-    /* Official McuSpecificInit: load HUK with RSIP_DUMMY_LC (0x2).
-     * If this fails (-12), try -DRSIP_SKIP_HUK=1 to test SHA without HUK,
-     * or confirm device lifecycle matches what FIT expects on RSKRX261. */
+    /* RSIP_DUMMY_LC 0x2 is the lifecycle value FIT uses on the RSKRX261 path. */
     {
         uint32_t lc_state = RSIP_DUMMY_LC;
         iret = HW_SCE_LoadHukSub(&lc_state);
         if (iret != FSP_SUCCESS) {
-            return RSIP_ERR_HUK; /* -12 */
+            return RSIP_ERR_HUK;
         }
     }
-#endif
 
     return 0;
 }
 
-/*==============================================================================
- * SHA-256 — optimized one-shot path (direct HW_SCE_* , minimal copies)
+/*
+ * IV words are byte-swapped vs FIPS constants, same as mbedtls_sha256_alt for RSIP.
+ * HW then LE-stores the state so the 32-byte digest matches the usual FIPS image
+ * on little-endian RX (checked by rsip_sha256_selftest).
  *
- * IV is the official RSIP/mbedtls_alt endian-swapped constants.
- * Digest words are stored little-endian in the output buffer (official LE put).
- *============================================================================*/
+ * Sharing is built from the oneshot path upward:
+ *   - sha256_compress_blocks: full 64-byte blocks into state[8]
+ *   - sha256_final_pad: PKCS-style pad + bit-length + final digest
+ * compute uses only those plus a local state[8] (no ctx). init/update/finish
+ * add the streaming buffer on top.
+ *
+ * IV is copied with memcpy from s_sha256_iv so one .rodata image is shared
+ * by compute and init (smaller total than per-call mov.l immediates when both
+ * paths may remain, and avoids duplicating eight immediates in .text).
+ *
+ * Build with -ffunction-sections and -Wl,--gc-sections so an app that only
+ * references compute can drop the public multipart symbols, and the reverse.
+ */
+
 static const uint32_t s_sha256_iv[8] = {
     0x67E6096Au, 0x85AE67BBu, 0x72F36E3Cu, 0x3AF54FA5u,
     0x7F520E51u, 0x8C68059Bu, 0xABD9831Fu, 0x19CDE05Bu
 };
 
+#if defined(__GNUC__)
+#define RSIP_SHA_INLINE static inline __attribute__((always_inline))
+#else
+#define RSIP_SHA_INLINE static inline
+#endif
 
-/**
- * One-shot SHA-256. Does not use rsip_sha256_ctx / init / update / finish.
- * Full blocks are fed to HW with no intermediate ctx; only the final
- * (and optional extra) padding block is assembled on the stack.
- *
- * OutData_MsgDigest may alias InData_InitVal (same state[] buffer).
- */
-int rsip_sha256_compute(const uint8_t *msg, size_t len, uint8_t digest[RSIP_SHA256_DIGEST_SIZE])
+/* Compress complete 64-byte blocks. state is a plain 8-word array (not a ctx). */
+RSIP_SHA_INLINE int sha256_compress_blocks(uint32_t state[8],
+                                           const uint8_t *data, size_t nblocks)
 {
-    uint32_t state[8] = {
-        s_sha256_iv[0], s_sha256_iv[1], s_sha256_iv[2], s_sha256_iv[3],
-        s_sha256_iv[4], s_sha256_iv[5], s_sha256_iv[6], s_sha256_iv[7]
-    };
+    if (nblocks == 0u) {
+        return 0;
+    }
+
+    if (((uintptr_t)data & 3u) == 0u) {
+        const uint32_t *wp = (const uint32_t *)(const void *)data;
+        while (nblocks > 0u) {
+            fsp_err_t err = HW_SCE_ShaGenerateMessageDigestSub(
+                state, wp, state, 16u);
+            if (err != FSP_SUCCESS) {
+                return (int)err;
+            }
+            wp += 16u;
+            nblocks--;
+        }
+    } else {
+        while (nblocks > 0u) {
+            uint32_t words[16];
+            fsp_err_t err;
+            memcpy(words, data, 64u);
+            err = HW_SCE_ShaGenerateMessageDigestSub(
+                state, words, state, 16u);
+            if (err != FSP_SUCCESS) {
+                return (int)err;
+            }
+            data += 64u;
+            nblocks--;
+        }
+    }
+    return 0;
+}
+
+/*
+ * Final pad of a 0..63 byte tail and emit digest.
+ * total_lo/total_hi are the full message length in bytes (not bits).
+ */
+RSIP_SHA_INLINE int sha256_final_pad(uint32_t state[8],
+                                     const uint8_t *tail, size_t tail_len,
+                                     uint32_t total_lo, uint32_t total_hi,
+                                     uint8_t digest[32])
+{
     uint32_t words[16];
-    uint8_t *pad = (uint8_t *)words;
-    size_t   nfull;
-    size_t   off;
-    uint32_t rem;
-    uint32_t bit_lo;
-    uint32_t bit_hi;
-    fsp_err_t err;
+    uint8_t *pad = (uint8_t *)(void *)words;
+    uint32_t n = (uint32_t)tail_len;
 
-    if (digest == NULL || (msg == NULL && len > 0u)) {
-        return (int)FSP_ERR_CRYPTO_SCE_FAIL;
+    if (n != 0u) {
+        memcpy(pad, tail, n);
     }
-
-    nfull = len >> 6; /* number of full 64-byte blocks */
-    off   = 0u;
-
-    /*
-     * Alignment is invariant for successive 64-byte strides, so test once.
-     * OutData may alias InData_InitVal (state).
-     * Final block writes digest directly: on LE RX, uint32_t stores == LE byte order.
-     * digest should be 4-byte aligned (normal for stack/static buffers).
-     */
-    if (nfull > 0u) {
-        if (((uintptr_t)msg & 3u) == 0u) {
-            const uint32_t *wp = (const uint32_t *)(const void *)msg;
-            size_t i;
-            for (i = 0u; i < nfull; i++) {
-                err = HW_SCE_ShaGenerateMessageDigestSub(state, wp, state, 16u);
-                if (err != FSP_SUCCESS) {
-                    return (int)err;
-                }
-                wp += 16u; /* next 64 bytes */
-            }
-            off = nfull << 6;
-        } else {
-            size_t i;
-            for (i = 0u; i < nfull; i++) {
-                memcpy(words, msg + off, 64u);
-                err = HW_SCE_ShaGenerateMessageDigestSub(state, words, state, 16u);
-                if (err != FSP_SUCCESS) {
-                    return (int)err;
-                }
-                off += 64u;
-            }
+    pad[n++] = 0x80u;
+    if (n > 56u) {
+        if (n < 64u) {
+            memset(pad + n, 0, 64u - n);
         }
-    }
-
-    rem = (uint32_t)(len & 63u);
-    if (rem != 0u) {
-        memcpy(pad, msg + off, rem);
-    }
-    pad[rem++] = 0x80u;
-
-    if (rem > 56u) {
-        if (rem < 64u) {
-            memset(pad + rem, 0, 64u - rem);
-        }
-        err = HW_SCE_ShaGenerateMessageDigestSub(state, words, state, 16u);
+        fsp_err_t err = HW_SCE_ShaGenerateMessageDigestSub(
+            state, words, state, 16u);
         if (err != FSP_SUCCESS) {
             return (int)err;
         }
-        rem = 0u;
+        n = 0u;
     }
-    if (rem < 56u) {
-        memset(pad + rem, 0, 56u - rem);
+    if (n < 56u) {
+        memset(pad + n, 0, 56u - n);
     }
 
-    bit_lo = (uint32_t)len << 3;
-    bit_hi = (uint32_t)(len >> 29);
+    uint32_t bit_lo = total_lo << 3;
+    uint32_t bit_hi = (total_hi << 3) | (total_lo >> 29);
 
     pad[56] = (uint8_t)(bit_hi >> 24);
     pad[57] = (uint8_t)(bit_hi >> 16);
@@ -1123,17 +1087,106 @@ int rsip_sha256_compute(const uint8_t *msg, size_t len, uint8_t digest[RSIP_SHA2
     pad[62] = (uint8_t)(bit_lo >>  8);
     pad[63] = (uint8_t)(bit_lo);
 
-    /* Final compress: write result words straight into digest (LE memory order). */
-    err = HW_SCE_ShaGenerateMessageDigestSub(
+    return (int)HW_SCE_ShaGenerateMessageDigestSub(
         state, words, (uint32_t *)(void *)digest, 16u);
-    return (int)err;
 }
 
+int rsip_sha256_compute(const uint8_t *msg, size_t len,
+                        uint8_t digest[RSIP_SHA256_DIGEST_SIZE])
+{
+    /* msg must be non-NULL even for len==0 (avoids null+0 when forming tail).
+     * total_hi is fixed at 0: one-shot length fits in 32 bits on this MCU class. */
+    if (msg == NULL || digest == NULL) {
+        return -1;
+    }
 
+    uint32_t state[8];
+    memcpy(state, s_sha256_iv, sizeof(s_sha256_iv));
+
+    size_t nblocks = len >> 6;
+    int rc = sha256_compress_blocks(state, msg, nblocks);
+    if (rc != 0) {
+        return rc;
+    }
+
+    size_t rem = len & 63u;
+    return sha256_final_pad(state, msg + (nblocks << 6), rem,
+                            (uint32_t)len, 0u, digest);
+}
+
+int rsip_sha256_init(struct rsip_sha256_ctx *ctx)
+{
+    if (ctx == NULL) {
+        return -1;
+    }
+
+    memcpy(ctx->state, s_sha256_iv, sizeof(s_sha256_iv));
+    ctx->total_lo   = 0u;
+    ctx->total_hi   = 0u;
+    ctx->buffer_len = 0u;
+    return 0;
+}
+
+int rsip_sha256_update(struct rsip_sha256_ctx *ctx, const uint8_t *data, size_t len)
+{
+    if (ctx == NULL || (data == NULL && len > 0u)) {
+        return -1;
+    }
+
+    uint32_t new_lo = ctx->total_lo + (uint32_t)len;
+    if (new_lo < ctx->total_lo) {
+        ctx->total_hi++;
+    }
+    ctx->total_lo = new_lo;
+
+    if (ctx->buffer_len > 0u) {
+        uint32_t need = 64u - ctx->buffer_len;
+        if ((uint32_t)len < need) {
+            memcpy(ctx->buffer + ctx->buffer_len, data, len);
+            ctx->buffer_len += (uint32_t)len;
+            return 0;
+        }
+        memcpy(ctx->buffer + ctx->buffer_len, data, need);
+        int rc = sha256_compress_blocks(ctx->state, ctx->buffer, 1u);
+        if (rc != 0) {
+            return rc;
+        }
+        data += need;
+        len  -= need;
+        ctx->buffer_len = 0u;
+    }
+
+    if (len >= 64u) {
+        size_t nblocks = len >> 6;
+        int rc = sha256_compress_blocks(ctx->state, data, nblocks);
+        if (rc != 0) {
+            return rc;
+        }
+        data += nblocks << 6;
+        len  &= 63u;
+    }
+
+    if (len > 0u) {
+        memcpy(ctx->buffer, data, len);
+        ctx->buffer_len = (uint32_t)len;
+    }
+    return 0;
+}
+
+int rsip_sha256_finish(struct rsip_sha256_ctx *ctx, uint8_t digest[RSIP_SHA256_DIGEST_SIZE])
+{
+    if (ctx == NULL || digest == NULL) {
+        return -1;
+    }
+    return sha256_final_pad(ctx->state,
+                            ctx->buffer, ctx->buffer_len,
+                            ctx->total_lo, ctx->total_hi,
+                            digest);
+}
 
 int rsip_sha256_selftest(void)
 {
-    /* FIPS 180-4: SHA-256("") */
+    /* Empty-message digest (FIPS 180-4). */
     static const uint8_t expected[32] = {
         0xe3,0xb0,0xc4,0x42,0x98,0xfc,0x1c,0x14,
         0x9a,0xfb,0xf4,0xc8,0x99,0x6f,0xb9,0x24,
@@ -1148,7 +1201,7 @@ int rsip_sha256_selftest(void)
     return memcmp(dig, expected, 32) == 0 ? 0 : -1;
 }
 
-/*----- ECDSA (secp256r1) primitives -----*/
+/* ECDSA path: pf1 + func070/071/073 + DomainParam_NIST_P256 */
 static void HW_SCE_p_func070(const uint32_t ARG1[]);
 static void HW_SCE_p_func071(const uint32_t ARG1[]);
 static void HW_SCE_p_func073(const uint32_t ARG1[]);
@@ -1156,7 +1209,7 @@ static void HW_SCE_p_func073_sub001(uint32_t arg1, uint32_t arg2, uint32_t arg3)
 static void HW_SCE_p_func073_sub002(uint32_t arg1);
 static void HW_SCE_p_func073_sub003(uint32_t arg1, uint32_t arg2);
 
-/* DomainParam_NIST_P256 — __LIT (little-endian) branch of DomainParams.c */
+/* DomainParams.c __LIT branch; pairs with LE mode and BE byte buffers cast to words. */
 static const uint32_t DomainParam_NIST_P256[72] = {
     0xb32549c4u,0x940b39a4u,0x577bd5c9u,0xfd7bf7b6u,
     0xba887d30u,0xf5f64f20u,0x1328d683u,0xe410c83bu,
@@ -1179,7 +1232,6 @@ static const uint32_t DomainParam_NIST_P256[72] = {
 };
 
 
-/*--- func071 ---*/
 static void HW_SCE_p_func071 (const uint32_t ARG1[])
 {
     WR1_PROG(REG_0094H, 0x30003000U);
@@ -1979,15 +2031,9 @@ static fsp_err_t HW_SCE_EcdsaSignatureVerificationSub (const uint32_t InData_Cur
 }
 
 /*
- * Official mbedtls_ecdsa_verify (ecdsa_alt.c):
- *   - stores X/Y/r/s/hash as BIG-ENDIAN byte strings
- *   - passes them as (uint32_t *) without logical word conversion
- * On LE RX, WR*_ADDR loads the byte-swapped 32-bit values expected with
- * DomainParam_* __LIT tables.
- *
- * Aligned hash/sig buffers are forwarded by cast (no memcpy).
- * pubkey is SEC1 0x04||X||Y: X||Y at offset 1 is never 4-byte aligned
- * when pubkey is aligned, so X||Y is always copied once.
+ * Match ecdsa_alt.c: keep field elements as big-endian bytes, then pass (uint32_t *).
+ * Do not rebuild logical BE words; WR*_ADDR on LE RX plus __LIT domain params
+ * expect that memory image. Cast when the pointer is 4-byte aligned to avoid a copy.
  */
 
 int rsip_ecdsa_p256_verify_hash(
@@ -2011,8 +2057,7 @@ int rsip_ecdsa_p256_verify_hash(
         return -1;
     }
 
-    /* Digest / signature / public X||Y: cast when 4-byte aligned, else stack copy.
-     * X||Y is at pubkey+1; aligned only when (uintptr_t)pubkey % 4 == 3. */
+    /* pubkey+1 is 4-byte aligned only when pubkey itself sits at 4k+3. */
     if (((uintptr_t)hash & 3u) == 0u) {
         p_dig = (const uint32_t *)(const void *)hash;
     } else {
@@ -2037,7 +2082,7 @@ int rsip_ecdsa_p256_verify_hash(
         }
     }
 
-    curve_type[0] = RSIP_CURVE_TYPE_NIST_P256; /* SCE_ECC_CURVE_TYPE_NIST = 0 */
+    curve_type[0] = RSIP_CURVE_TYPE_NIST_P256;
 
     err = HW_SCE_EcdsaSignatureVerificationSub(
         curve_type, p_key, p_dig, p_sig, DomainParam_NIST_P256);
@@ -2047,26 +2092,21 @@ int rsip_ecdsa_p256_verify_hash(
 
 int rsip_ecdsa_p256_selftest(void)
 {
-    /* RFC 6979 A.2.5 — P-256 / SHA-256 / message "sample" */
+    /* RFC 6979 A.2.5, message "sample". Constants only for this test. */
     static const uint8_t hash[32] = {
-        /* SHA-256("sample") */
         0xAF,0x2B,0xDB,0xE1,0xAA,0x9B,0x6E,0xC1,0xE2,0xAD,0xE1,0xD6,0x94,0xF4,0x1F,0xC7,
         0x1A,0x83,0x1D,0x02,0x68,0xE9,0x89,0x15,0x62,0x11,0x3D,0x8A,0x62,0xAD,0xD1,0xBF
     };
     static const uint8_t pubkey[65] = {
         0x04,
-        /* Qx */
         0x60,0xFE,0xD4,0xBA,0x25,0x5A,0x9D,0x31,0xC9,0x61,0xEB,0x74,0xC6,0x35,0x6D,0x68,
         0xC0,0x49,0xB8,0x92,0x3B,0x61,0xFA,0x6C,0xE6,0x69,0x62,0x2E,0x60,0xF2,0x9F,0xB6,
-        /* Qy */
         0x79,0x03,0xFE,0x10,0x08,0xB8,0xBC,0x99,0xA4,0x1A,0xE9,0xE9,0x56,0x28,0xBC,0x64,
         0xF2,0xF1,0xB2,0x0C,0x2D,0x7E,0x9F,0x51,0x77,0xA3,0xC2,0x94,0xD4,0x46,0x22,0x99
     };
     static const uint8_t sig[64] = {
-        /* r */
         0xEF,0xD4,0x8B,0x2A,0xAC,0xB6,0xA8,0xFD,0x11,0x40,0xDD,0x9C,0xD4,0x5E,0x81,0xD6,
         0x9D,0x2C,0x87,0x7B,0x56,0xAA,0xF9,0x91,0xC3,0x4D,0x0E,0xA8,0x4E,0xAF,0x37,0x16,
-        /* s */
         0xF7,0xCB,0x1C,0x94,0x2D,0x65,0x7C,0x41,0xD4,0x36,0xC7,0xA1,0xB6,0xE2,0x9F,0x65,
         0xF3,0xE9,0x00,0xDB,0xB9,0xAF,0xF4,0x06,0x4D,0xC4,0xAB,0x2F,0x84,0x3A,0xCD,0xA8
     };
@@ -2082,7 +2122,7 @@ int rsip_ecdsa_p256_selftest(void)
     bad_sig[63] ^= 0x01u;
     rc = rsip_ecdsa_p256_verify_hash(hash, bad_sig, pubkey);
     if (rc == 0) {
-        return -100; /* unexpected success on tampered signature */
+        return -100;
     }
     return 0;
 }
