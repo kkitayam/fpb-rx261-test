@@ -1,11 +1,11 @@
 /*
- * Copyright (c) 2014 Renesas Electronics Corporation.
- * Derived from Renesas FIT r_flash_rx (Flash Type 1).
- *
  * SPDX-License-Identifier: BSD-3-Clause
+ *
+ * Copyright (c) 2014 Renesas Electronics Corporation.
+ * Derived from Renesas FIT r_flash_rx (Flash Type 1 / no-FCU).
  */
 
-#include "hal_flash.h"
+#include "flash_type1.h"
 #include "iodefine.h"
 #include <string.h>
 
@@ -42,11 +42,11 @@
 #define FPMCR_DF_PE_MODE    (0x10u)
 #define FPMCR_LVPE          (0x40u)
 
-#define HAL_FLASH_OK            (0)
-#define HAL_FLASH_ERR_PARAM     (-1)
-#define HAL_FLASH_ERR_TIMEOUT   (-3)
-#define HAL_FLASH_ERR_FAILURE   (-4)
-#define HAL_FLASH_ERR_ALIGN     (-5)
+#define FLASH_TYPE1_OK            (0)
+#define FLASH_TYPE1_ERR_PARAM     (-1)
+#define FLASH_TYPE1_ERR_TIMEOUT   (-3)
+#define FLASH_TYPE1_ERR_FAILURE   (-4)
+#define FLASH_TYPE1_ERR_ALIGN     (-5)
 
 #define WAIT_MAX            (0x100000u)
 /* FSTATR0 bits: ERERR|PRGERR|BCERR|ILGLERR */
@@ -58,15 +58,15 @@
  * PCKA[5:0] (RX261 HW manual table 46.4).
  * Default 0x2F = 64 MHz. Not (FCLK_MHz - 1).
  */
-#ifndef HAL_FLASH_PCKA
-#define HAL_FLASH_PCKA  (0x2Fu)
+#ifndef FLASH_TYPE1_PCKA
+#define FLASH_TYPE1_PCKA  (0x2Fu)
 #endif
 
 /* CPU clock for software delay. One delay loop is 4 cycles (sub + bne + penalty). */
-#ifndef HAL_FLASH_ICLK_MHZ
-#define HAL_FLASH_ICLK_MHZ  (64u)
+#ifndef FLASH_TYPE1_ICLK_MHZ
+#define FLASH_TYPE1_ICLK_MHZ  (64u)
 #endif
-#define HAL_FLASH_DELAY_LOOPS_PER_US  (HAL_FLASH_ICLK_MHZ / 4u)
+#define FLASH_TYPE1_DELAY_LOOPS_PER_US  (FLASH_TYPE1_ICLK_MHZ / 4u)
 
 /*
  * Put code that runs in Code Flash P/E mode in this section.
@@ -74,18 +74,18 @@
  * (FIT uses R_BSP_ATTRIB_SECTION_CHANGE(P, FRAM).)
  */
 #if defined(__GNUC__)
-#define HAL_FLASH_PE_RAM     __attribute__((section(".text.hal_flash_pe_ram")))
+#define FLASH_TYPE1_PE_RAM     __attribute__((section(".text.flash_type1_pe_ram")))
 /* Do not inline entry points that the flash API calls. */
-#define HAL_FLASH_PE_RAM_API __attribute__((section(".text.hal_flash_pe_ram"), noinline))
+#define FLASH_TYPE1_PE_RAM_API __attribute__((section(".text.flash_type1_pe_ram"), noinline))
 #else
-#define HAL_FLASH_PE_RAM
-#define HAL_FLASH_PE_RAM_API
+#define FLASH_TYPE1_PE_RAM
+#define FLASH_TYPE1_PE_RAM_API
 #endif
 
 
 static void delay_us(uint32_t us)
 {
-    uint32_t i = us * HAL_FLASH_DELAY_LOOPS_PER_US;
+    uint32_t i = us * FLASH_TYPE1_DELAY_LOOPS_PER_US;
     while (i--) {
         __asm volatile ("");
     }
@@ -117,17 +117,17 @@ static int df_wait_frdy(void)
 {
     for (uint32_t cnt = 0; cnt < WAIT_MAX; ++cnt) {
         if (FLASH.FSTATR1.BIT.FRDY != 0) {
-            return HAL_FLASH_OK;
+            return FLASH_TYPE1_OK;
         }
     }
-    return HAL_FLASH_ERR_TIMEOUT;
+    return FLASH_TYPE1_ERR_TIMEOUT;
 }
 
 static int df_check_error_and_clear(void)
 {
-    int ret = HAL_FLASH_OK;
+    int ret = FLASH_TYPE1_OK;
     if ((FLASH.FSTATR0.BYTE & FSTATR0_ERR_MASK) != 0) {
-        ret = HAL_FLASH_ERR_FAILURE;
+        ret = FLASH_TYPE1_ERR_FAILURE;
     }
 
     FLASH.FCR.BYTE = FCR_CLEAR;
@@ -136,7 +136,7 @@ static int df_check_error_and_clear(void)
             return ret;
         }
     }
-    return HAL_FLASH_ERR_TIMEOUT;
+    return FLASH_TYPE1_ERR_TIMEOUT;
 }
 
 static int enter_df_pe_mode(void)
@@ -146,7 +146,7 @@ static int enter_df_pe_mode(void)
     uint32_t cnt = WAIT_MAX;
     while ((FLASH.FENTRYR.WORD & 0x00FFu) != 0x0080u) {
         if (--cnt == 0) {
-            return HAL_FLASH_ERR_TIMEOUT;
+            return FLASH_TYPE1_ERR_TIMEOUT;
         }
     }
 
@@ -155,8 +155,8 @@ static int enter_df_pe_mode(void)
     } else {
         df_write_fpmcr((uint8_t)(FPMCR_DF_PE_MODE | FPMCR_LVPE));
     }
-    FLASH.FISR.BIT.PCKA = (uint8_t)HAL_FLASH_PCKA;
-    return HAL_FLASH_OK;
+    FLASH.FISR.BIT.PCKA = (uint8_t)FLASH_TYPE1_PCKA;
+    return FLASH_TYPE1_OK;
 }
 
 static void enter_df_read_mode(void)
@@ -190,8 +190,8 @@ static int df_write_byte(uintptr_t dest, uint8_t data)
 
     FLASH.FCR.BYTE = FCR_WRITE;
 
-    if (df_wait_frdy() != HAL_FLASH_OK) {
-        return HAL_FLASH_ERR_TIMEOUT;
+    if (df_wait_frdy() != FLASH_TYPE1_OK) {
+        return FLASH_TYPE1_ERR_TIMEOUT;
     }
     return df_check_error_and_clear();
 }
@@ -211,8 +211,8 @@ static int df_blank_check_block(uintptr_t start)
 
     FLASH.FCR.BYTE = FCR_BLANKCHECK;
 
-    if (df_wait_frdy() != HAL_FLASH_OK) {
-        return HAL_FLASH_ERR_TIMEOUT;
+    if (df_wait_frdy() != FLASH_TYPE1_OK) {
+        return FLASH_TYPE1_ERR_TIMEOUT;
     }
 
     /* BCERR set means the area is not blank. */
@@ -241,8 +241,8 @@ static int df_erase_block(uintptr_t start)
 
     FLASH.FCR.BYTE = FCR_ERASE;
 
-    if (df_wait_frdy() != HAL_FLASH_OK) {
-        return HAL_FLASH_ERR_TIMEOUT;
+    if (df_wait_frdy() != FLASH_TYPE1_OK) {
+        return FLASH_TYPE1_ERR_TIMEOUT;
     }
     return df_check_error_and_clear();
 }
@@ -250,7 +250,7 @@ static int df_erase_block(uintptr_t start)
 static int df_write(uintptr_t address, const uint8_t *src, size_t size)
 {
     int ret = enter_df_pe_mode();
-    while (ret == HAL_FLASH_OK && size > 0) {
+    while (ret == FLASH_TYPE1_OK && size > 0) {
         ret = df_write_byte(address, *src);
         address++;
         src++;
@@ -263,7 +263,7 @@ static int df_write(uintptr_t address, const uint8_t *src, size_t size)
 static int df_erase(uintptr_t address)
 {
     int ret = enter_df_pe_mode();
-    if (ret == HAL_FLASH_OK) {
+    if (ret == FLASH_TYPE1_OK) {
         ret = df_blank_check_block(address);
         /* Erase only if the block is not blank. */
         if (ret == 1) {
@@ -278,16 +278,16 @@ static int df_erase(uintptr_t address)
 /* Code Flash path (must run from RAM; ROM fetch disabled in CF P/E mode)     */
 /* -------------------------------------------------------------------------- */
 
-HAL_FLASH_PE_RAM
+FLASH_TYPE1_PE_RAM
 static void cf_delay_us(uint32_t us)
 {
-    uint32_t i = us * HAL_FLASH_DELAY_LOOPS_PER_US;
+    uint32_t i = us * FLASH_TYPE1_DELAY_LOOPS_PER_US;
     while (i--) {
         __asm volatile ("");
     }
 }
 
-HAL_FLASH_PE_RAM
+FLASH_TYPE1_PE_RAM
 static void cf_write_fpmcr(uint8_t value)
 {
     FLASH.FPR = 0xA5u;
@@ -296,23 +296,23 @@ static void cf_write_fpmcr(uint8_t value)
     FLASH.FPMCR.BYTE = value;
 }
 
-HAL_FLASH_PE_RAM
+FLASH_TYPE1_PE_RAM
 static int cf_wait_frdy(void)
 {
     for (uint32_t cnt = 0; cnt < WAIT_MAX; ++cnt) {
         if (FLASH.FSTATR1.BIT.FRDY != 0) {
-            return HAL_FLASH_OK;
+            return FLASH_TYPE1_OK;
         }
     }
-    return HAL_FLASH_ERR_TIMEOUT;
+    return FLASH_TYPE1_ERR_TIMEOUT;
 }
 
-HAL_FLASH_PE_RAM
+FLASH_TYPE1_PE_RAM
 static int cf_check_error_and_clear(void)
 {
-    int ret = HAL_FLASH_OK;
+    int ret = FLASH_TYPE1_OK;
     if ((FLASH.FSTATR0.BYTE & FSTATR0_ERR_MASK) != 0) {
-        ret = HAL_FLASH_ERR_FAILURE;
+        ret = FLASH_TYPE1_ERR_FAILURE;
     }
 
     FLASH.FCR.BYTE = FCR_CLEAR;
@@ -321,23 +321,23 @@ static int cf_check_error_and_clear(void)
             return ret;
         }
     }
-    return HAL_FLASH_ERR_TIMEOUT;
+    return FLASH_TYPE1_ERR_TIMEOUT;
 }
 
-HAL_FLASH_PE_RAM
+FLASH_TYPE1_PE_RAM
 static int enter_cf_pe_mode(void)
 {
     /* r_flash_nofcu.c flash_cf_pe_mode_enter (FLASH_TYPE_VARIETY_A) */
     FLASH.FENTRYR.WORD = FENTRYR_CF_PE_MODE;
     cf_write_fpmcr(FPMCR_CF_PE_MODE);
-    FLASH.FISR.BIT.PCKA = (uint8_t)HAL_FLASH_PCKA;
-    return HAL_FLASH_OK;
+    FLASH.FISR.BIT.PCKA = (uint8_t)FLASH_TYPE1_PCKA;
+    return FLASH_TYPE1_OK;
 }
 
 
 
 
-HAL_FLASH_PE_RAM
+FLASH_TYPE1_PE_RAM
 static void enter_cf_read_mode(void)
 {
     /* r_flash_nofcu.c flash_cf_read_mode_enter (FLASH_TYPE_VARIETY_A: no discharge) */
@@ -353,7 +353,7 @@ static void enter_cf_read_mode(void)
 
 
 
-HAL_FLASH_PE_RAM
+FLASH_TYPE1_PE_RAM
 static int cf_write_8byte(uintptr_t dest, const uint8_t *src)
 {
     /* FIT: read address - CODEFLASH_ADDR_OFFSET */
@@ -372,14 +372,14 @@ static int cf_write_8byte(uintptr_t dest, const uint8_t *src)
 
     FLASH.FCR.BYTE = FCR_WRITE;
 
-    if (cf_wait_frdy() != HAL_FLASH_OK) {
-        return HAL_FLASH_ERR_TIMEOUT;
+    if (cf_wait_frdy() != FLASH_TYPE1_OK) {
+        return FLASH_TYPE1_ERR_TIMEOUT;
     }
     return cf_check_error_and_clear();
 }
 
 
-HAL_FLASH_PE_RAM
+FLASH_TYPE1_PE_RAM
 static int cf_blank_check_block(uintptr_t start)
 {
     const uint32_t pe_start =
@@ -395,8 +395,8 @@ static int cf_blank_check_block(uintptr_t start)
 
     FLASH.FCR.BYTE = FCR_BLANKCHECK;
 
-    if (cf_wait_frdy() != HAL_FLASH_OK) {
-        return HAL_FLASH_ERR_TIMEOUT;
+    if (cf_wait_frdy() != FLASH_TYPE1_OK) {
+        return FLASH_TYPE1_ERR_TIMEOUT;
     }
 
     /* BCERR set means the area is not blank. */
@@ -410,7 +410,7 @@ static int cf_blank_check_block(uintptr_t start)
     return cf_check_error_and_clear();
 }
 
-HAL_FLASH_PE_RAM
+FLASH_TYPE1_PE_RAM
 static int cf_erase_block(uintptr_t start)
 {
     /* FIT R_CF_Erase: convert read-form addresses to P/E-form */
@@ -427,21 +427,21 @@ static int cf_erase_block(uintptr_t start)
 
     FLASH.FCR.BYTE = FCR_ERASE;
 
-    if (cf_wait_frdy() != HAL_FLASH_OK) {
-        return HAL_FLASH_ERR_TIMEOUT;
+    if (cf_wait_frdy() != FLASH_TYPE1_OK) {
+        return FLASH_TYPE1_ERR_TIMEOUT;
     }
     return cf_check_error_and_clear();
 }
 
 /*
- * Call this fromhal_flash_write() in flash.
- * The noinline attribute keeps the body in .text.hal_flash_pe_ram.
+ * Call this fromflash_type1_write() in flash.
+ * The noinline attribute keeps the body in .text.flash_type1_pe_ram.
  */
-HAL_FLASH_PE_RAM_API
+FLASH_TYPE1_PE_RAM_API
 static int cf_write(uintptr_t address, const uint8_t *src, size_t size)
 {
     int ret = enter_cf_pe_mode();
-    while (ret == HAL_FLASH_OK && size >= CF_MIN_PGM_SIZE) {
+    while (ret == FLASH_TYPE1_OK && size >= CF_MIN_PGM_SIZE) {
         ret = cf_write_8byte(address, src);
         address += CF_MIN_PGM_SIZE;
         src     += CF_MIN_PGM_SIZE;
@@ -451,11 +451,11 @@ static int cf_write(uintptr_t address, const uint8_t *src, size_t size)
     return ret;
 }
 
-HAL_FLASH_PE_RAM_API
+FLASH_TYPE1_PE_RAM_API
 static int cf_erase(uintptr_t address)
 {
     int ret = enter_cf_pe_mode();
-    if (ret == HAL_FLASH_OK) {
+    if (ret == FLASH_TYPE1_OK) {
         ret = cf_blank_check_block(address);
         /* Erase only if the block is not blank. */
         if (ret == 1) {
@@ -470,7 +470,7 @@ static int cf_erase(uintptr_t address)
 /* Public API (flash-resident; CF work is delegated to RAM functions)         */
 /* -------------------------------------------------------------------------- */
 
-void hal_flash_init(void)
+void flash_type1_init(void)
 {
     FLASH.DFLCTL.BIT.DFLEN = 1;
     while (FLASH.DFLCTL.BIT.DFLEN == 0) {
@@ -481,17 +481,17 @@ void hal_flash_init(void)
     enter_df_read_mode();
 }
 
-int hal_flash_write(uintptr_t address, const void *data, size_t size)
+int flash_type1_write(uintptr_t address, const void *data, size_t size)
 {
     if (data == NULL || size == 0) {
-        return HAL_FLASH_ERR_PARAM;
+        return FLASH_TYPE1_ERR_PARAM;
     }
 
     const uint8_t *src = (const uint8_t *)data;
 
     if (is_data_flash(address)) {
         if ((address + size) > (DF_BASE + DF_SIZE)) {
-            return HAL_FLASH_ERR_PARAM;
+            return FLASH_TYPE1_ERR_PARAM;
         }
         return df_write(address, src, size);
     }
@@ -499,15 +499,15 @@ int hal_flash_write(uintptr_t address, const void *data, size_t size)
     if (is_code_flash(address)) {
         if ((address & (CF_MIN_PGM_SIZE - 1u)) != 0 ||
             (size & (CF_MIN_PGM_SIZE - 1u)) != 0) {
-            return HAL_FLASH_ERR_ALIGN;
+            return FLASH_TYPE1_ERR_ALIGN;
         }
         return cf_write(address, src, size);
     }
 
-    return HAL_FLASH_ERR_PARAM;
+    return FLASH_TYPE1_ERR_PARAM;
 }
 
-int hal_flash_erase_sector(uintptr_t address)
+int flash_type1_erase_sector(uintptr_t address)
 {
     if (is_data_flash(address)) {
         return df_erase(address);
@@ -517,5 +517,5 @@ int hal_flash_erase_sector(uintptr_t address)
         return cf_erase(address);
     }
 
-    return HAL_FLASH_ERR_PARAM;
+    return FLASH_TYPE1_ERR_PARAM;
 }

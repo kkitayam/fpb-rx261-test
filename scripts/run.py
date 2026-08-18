@@ -23,7 +23,7 @@ import serial
 class SerialLogCapture:
     """Manages UART log capture and application execution."""
 
-    def __init__(self, serial_port: str, build_dir: str, duration: int = 5):
+    def __init__(self, serial_port: str, build_dir: str, duration: int = 5, display: bool = False):
         """
         Initialize the serial log capture.
 
@@ -31,6 +31,7 @@ class SerialLogCapture:
             serial_port: Serial port name (e.g., COM3, /dev/ttyUSB0)
             build_dir: Build directory path for log file output
             duration: Log capture duration in seconds
+            display: If True, also print logs to stdout
         """
         self.serial_port = serial_port
         self.build_dir = Path(build_dir)
@@ -38,6 +39,7 @@ class SerialLogCapture:
         self.log_file = self.build_dir / "uart.log"
         self.serial = None
         self.rfp_process = None
+        self.display = display
 
         logging.basicConfig(
             level=logging.INFO,
@@ -118,6 +120,14 @@ class SerialLogCapture:
                             data = self.serial.read(self.serial.in_waiting)
                             f.write(data)
                             f.flush()
+
+                            if self.display:
+                                try:
+                                    text = data.decode('utf-8', errors='replace')
+                                    sys.stdout.write(text)
+                                    sys.stdout.flush()
+                                except Exception:
+                                    pass
                         except Exception as e:
                             self.logger.error(f"Error reading from serial port: {e}")
                             return False
@@ -227,6 +237,11 @@ def main() -> int:
         default=5,
         help="Log capture duration in seconds (default: 5)"
     )
+    parser.add_argument(
+        "--display",
+        action="store_true",
+        help="Display UART logs to stdout in addition to saving to file"
+    )
 
     args = parser.parse_args()
 
@@ -234,7 +249,7 @@ def main() -> int:
         print("Error: serial_port option is required", file=sys.stderr)
         return 1
 
-    capture = SerialLogCapture(args.serial_port, args.build_dir, args.duration)
+    capture = SerialLogCapture(args.serial_port, args.build_dir, args.duration, args.display)
 
     rfp_args = [
         "-d", "RX200",

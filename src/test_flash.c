@@ -1,4 +1,4 @@
-#include "hal_flash.h"
+#include "flash_type1.h"
 #include <stdint.h>
 #include <string.h>
 

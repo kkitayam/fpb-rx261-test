@@ -29,7 +29,7 @@ app_includes = include_directories('src')
 
 vendor_sources = files(
   'vendor/rsip_ecdsa_p256_sha256.c',
-  'vendor/hal_flash.c',
+  'vendor/flash_type1.c',
 )
 vendor_includes = include_directories('vendor')
 
@@ -87,6 +87,18 @@ run_script = meson.current_source_dir() / 'scripts' / 'run.py'
 
 run_target(
   'run',
+  command: [
+    python_exe,
+    run_script,
+    serial_port_option,
+    '--build-dir', meson.current_build_dir(),
+    '--rfp-cli', rfp_cli,
+    '--display',
+  ]
+)
+
+run_target(
+  'run-capture',
   command: [
     python_exe,
     run_script,
