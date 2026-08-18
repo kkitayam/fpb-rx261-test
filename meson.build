@@ -7,6 +7,9 @@ project('mebuki', 'c',
 objcopy = find_program('objcopy')
 objdump = find_program('objdump')
 rfp_cli = find_program('rfp-cli')
+python_exe = find_program('python3', 'python', required: true)
+
+serial_port_option = get_option('serial_port')
 
 bearssl_dep = dependency(
     'bearssl',
@@ -76,13 +79,19 @@ run_target(
   ]
 )
 
+if serial_port_option == ''
+  error('serial_port option must be specified. Use -Dserial_port=<port>')
+endif
+
+run_script = meson.current_source_dir() / 'scripts' / 'run.py'
+
 run_target(
   'run',
   command: [
-    rfp_cli,
-    '-d', 'RX200',
-    '-t', 'e2l',
-    '-if', 'fine',
-    '-run',
+    python_exe,
+    run_script,
+    serial_port_option,
+    '--build-dir', meson.current_build_dir(),
+    '--rfp-cli', rfp_cli,
   ]
 )

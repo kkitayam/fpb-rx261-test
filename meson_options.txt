@@ -1,0 +1,1 @@
+option('serial_port', type: 'string', value: '', description: 'Serial port for UART logging (e.g., COM3 on Windows, /dev/ttyUSB0 on Linux)')

@@ -1,0 +1,8 @@
+[project]
+name = "fpb-rx261-test"
+version = "0.1.0"
+description = "FPB-RX261 Test Application"
+requires-python = ">=3.11"
+dependencies = [
+    "pyserial>=3.5",
+]
