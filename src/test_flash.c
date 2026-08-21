@@ -22,7 +22,7 @@ int test_data_flash(void)
         write_buf[i] = (uint8_t)(0xA0u + i);
     }
 
-    ret = hal_flash_erase_sector(DF_TEST_ADDR);
+    ret = flash_type1_erase_sector(DF_TEST_ADDR);
     if (ret != 0) {
         return -1;
     }
@@ -36,7 +36,7 @@ int test_data_flash(void)
         }
     }
 
-    ret = hal_flash_write(DF_TEST_ADDR, write_buf, DF_TEST_SIZE);
+    ret = flash_type1_write(DF_TEST_ADDR, write_buf, DF_TEST_SIZE);
     if (ret != 0) {
         return -3;
     }
@@ -64,7 +64,7 @@ int test_code_flash(void)
         write_buf[i] = (uint8_t)(0x50u + i);
     }
 
-    ret = hal_flash_erase_sector(CF_TEST_ADDR);
+    ret = flash_type1_erase_sector(CF_TEST_ADDR);
     if (ret != 0) {
         return -1;
     }
@@ -78,7 +78,7 @@ int test_code_flash(void)
         }
     }
 
-    ret = hal_flash_write(CF_TEST_ADDR, write_buf, CF_TEST_SIZE);
+    ret = flash_type1_write(CF_TEST_ADDR, write_buf, CF_TEST_SIZE);
     if (ret != 0) {
         return -3;
     }

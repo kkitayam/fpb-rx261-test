@@ -16,7 +16,7 @@ extern int test_data_flash(void);
 extern int test_code_flash(void);
 extern void bench_sha256(void);
 extern void bench_ecdsa(void);
-extern void hal_flash_init(void);
+extern void flash_type1_init(void);
 
 static void uart_put_uint(const char* s, uint32_t value, bool negative)
 {
@@ -107,7 +107,7 @@ int main(void)
 
     bench_ecdsa();
 
-    hal_flash_init();    
+    flash_type1_init();
 
     err = test_data_flash();
     if (err) { uart_put_int("fail test_data_flash: ", err); return -1; }

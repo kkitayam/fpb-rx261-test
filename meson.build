@@ -16,14 +16,17 @@ bearssl_dep = dependency(
     fallback: ['bearssl', 'bearssl_dep'],
 )
 
-app_sources = files(
-  'src/main.c',
+app_common_sources = files(
   'src/uart.c',
   'src/system.c',
-  'src/startup.c',
   'src/br_sha256.c',
   'src/test_rsip.c',
   'src/test_flash.c',
+)
+
+app_sources = files(
+  'src/main.c',
+  'src/startup.c',
 )
 app_includes = include_directories('src')
 
@@ -39,10 +42,11 @@ machine_linker = meson.current_source_dir() / 'src/' + linker_file_name
 
 app_exe = executable(
   'app',
-  [app_sources, vendor_sources],
+  [app_sources, app_common_sources, vendor_sources],
   include_directories: [app_includes, vendor_includes],
   dependencies: [ bearssl_dep ],
   link_args: [
+    '-nostdlib',
     '-T' + machine_linker,
     '-Wl,--print-map-locals,-Map=' + meson.current_build_dir() / 'app.map',
   ],
