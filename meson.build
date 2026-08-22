@@ -28,6 +28,11 @@ app_sources = files(
   'src/main.c',
   'src/startup.c',
 )
+app_crt_sources = files(
+  'src/crt/main.c',
+  'src/crt/startup.c',
+  'src/crt/retarget.c',
+)
 app_includes = include_directories('src')
 
 vendor_sources = files(
@@ -35,10 +40,7 @@ vendor_sources = files(
   'vendor/flash_type1.c',
 )
 vendor_includes = include_directories('vendor')
-
-linker_file_name = 'flash.ld'
-machine_linker_file = files('src/' + linker_file_name)
-machine_linker = meson.current_source_dir() / 'src/' + linker_file_name
+machine_linker = files('src/flash.ld')
 
 app_exe = executable(
   'app',
@@ -47,10 +49,24 @@ app_exe = executable(
   dependencies: [ bearssl_dep ],
   link_args: [
     '-nostdlib',
-    '-T' + machine_linker,
+    '-T' + machine_linker[0].full_path(),
     '-Wl,--print-map-locals,-Map=' + meson.current_build_dir() / 'app.map',
   ],
-  link_depends: machine_linker_file,
+  link_depends: machine_linker,
+  name_suffix: 'elf',
+)
+
+machine_linker_crt = files('src/crt/flash.ld')
+app_crt_exe = executable(
+  'app_crt',
+  [app_crt_sources, app_common_sources, vendor_sources],
+  include_directories: [app_includes, vendor_includes],
+  dependencies: [ bearssl_dep ],
+  link_args: [
+    '-T' + machine_linker_crt[0].full_path(),
+    '-Wl,--print-map-locals,-Map=' + meson.current_build_dir() / 'app_crt.map',
+  ],
+  link_depends: machine_linker_crt,
   name_suffix: 'elf',
 )
 
@@ -62,10 +78,27 @@ app_hex = custom_target(
   build_by_default: true,
 )
 
+app_crt_hex = custom_target(
+  'app_crt_hex',
+  input: app_crt_exe,
+  output: app_crt_exe.name() + '.s32',
+  command: [objcopy, '-O', 'srec', '@INPUT@', '@OUTPUT@'],
+  build_by_default: true,
+)
+
 app_txt = custom_target(
   'app_txt',
   input: app_exe,
   output: app_exe.name() + '.txt',
+  command: [objdump, '-d', '-S', '-l', '@INPUT@'],
+  capture : true,
+  build_by_default: true,
+)
+
+app_crt_txt = custom_target(
+  'app_crt_txt',
+  input: app_crt_exe,
+  output: app_crt_exe.name() + '.txt',
   command: [objdump, '-d', '-S', '-l', '@INPUT@'],
   capture : true,
   build_by_default: true,
@@ -80,6 +113,18 @@ run_target(
     '-if', 'fine',
     '-a',
     app_hex,
+  ]
+)
+
+run_target(
+  'deploy_crt',
+  command: [
+    rfp_cli,
+    '-d', 'RX200',
+    '-t', 'e2l',
+    '-if', 'fine',
+    '-a',
+    app_crt_hex,
   ]
 )
 

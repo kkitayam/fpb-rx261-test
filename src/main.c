@@ -119,3 +119,8 @@ int main(void)
 
     return 0;
 }
+
+void __libc_init_array()
+{
+    main();
+}
